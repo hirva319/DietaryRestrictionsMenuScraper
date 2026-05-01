@@ -12,13 +12,60 @@ export default function Home() {
   const [results, setResults] = useState<ClassificationResult | null>(null);
   const [restaurant, setRestaurant] = useState("");
 
+  const extractAndClassify = useCallback(async (urls: { title: string; url: string }[], restaurantName: string) => {
+    setStep("extracting");
+
+    let menuText = "";
+    for (const item of urls.slice(0, 3)) {
+      try {
+        const extractRes = await fetch("/api/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: item.url }),
+        });
+
+        if (extractRes.ok) {
+          const extractData = await extractRes.json();
+          if (extractData.text && extractData.text.length > 50) {
+            menuText += `\n--- From: ${item.title} (${item.url}) ---\n${extractData.text}\n`;
+          }
+        }
+      } catch {
+        // skip failed extractions
+      }
+    }
+
+    if (menuText.length < 50) {
+      throw new Error("Could not extract enough menu data. Try pasting the menu URL directly.");
+    }
+
+    setStep("classifying");
+    const classifyRes = await fetch("/api/classify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ menuText, restaurant: restaurantName }),
+    });
+
+    if (!classifyRes.ok) {
+      const errData = await classifyRes.json();
+      throw new Error(errData.error || "Classification failed");
+    }
+
+    const classification: ClassificationResult = await classifyRes.json();
+
+    if (!classification.items || classification.items.length === 0) {
+      throw new Error("No menu items could be identified. Try a different restaurant or URL.");
+    }
+
+    return classification;
+  }, []);
+
   const handleSearch = useCallback(async (restaurantName: string, city: string) => {
     setRestaurant(restaurantName);
     setError(null);
     setResults(null);
 
     try {
-      // Step 1: Search for menu
       setStep("searching");
       const searchRes = await fetch("/api/search", {
         method: "POST",
@@ -36,70 +83,35 @@ export default function Home() {
       };
 
       if (!searchResults || searchResults.length === 0) {
-        throw new Error("No menu results found. Try a different restaurant name or city.");
+        throw new Error("No menu results found. Try pasting the menu URL directly.");
       }
 
-      // Step 2: Extract menu content from top results
-      setStep("extracting");
-
-      let menuText = "";
-      const urlsToTry = searchResults.slice(0, 3);
-
-      for (const result of urlsToTry) {
-        try {
-          const extractRes = await fetch("/api/extract", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: result.url }),
-          });
-
-          if (extractRes.ok) {
-            const extractData = await extractRes.json();
-            if (extractData.text && extractData.text.length > 50) {
-              menuText += `\n--- From: ${result.title} (${result.url}) ---\n${extractData.text}\n`;
-            }
-          }
-        } catch {
-          // skip failed extractions, try next URL
-        }
-      }
-
-      if (menuText.length < 100) {
-        menuText = searchResults
-          .map((r) => `${r.title}: ${r.snippet}`)
-          .join("\n\n");
-
-        if (menuText.length < 50) {
-          throw new Error("Could not extract enough menu data. The restaurant's menu may not be available online.");
-        }
-      }
-
-      // Step 3: Classify with AI
-      setStep("classifying");
-      const classifyRes = await fetch("/api/classify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ menuText, restaurant: restaurantName }),
-      });
-
-      if (!classifyRes.ok) {
-        const errData = await classifyRes.json();
-        throw new Error(errData.error || "Classification failed");
-      }
-
-      const classification: ClassificationResult = await classifyRes.json();
-
-      if (!classification.items || classification.items.length === 0) {
-        throw new Error("No menu items could be identified. Try a different restaurant.");
-      }
-
+      const classification = await extractAndClassify(searchResults, restaurantName);
       setResults(classification);
       setStep("results");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setStep("error");
     }
-  }, []);
+  }, [extractAndClassify]);
+
+  const handleDirectUrl = useCallback(async (url: string, restaurantName: string) => {
+    setRestaurant(restaurantName);
+    setError(null);
+    setResults(null);
+
+    try {
+      const classification = await extractAndClassify(
+        [{ title: restaurantName, url }],
+        restaurantName
+      );
+      setResults(classification);
+      setStep("results");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setStep("error");
+    }
+  }, [extractAndClassify]);
 
   const handleReset = () => {
     setStep("input");
@@ -122,18 +134,18 @@ export default function Home() {
             Veggie Scout
           </h1>
           <p className="mt-3 text-lg text-gray-500 max-w-md mx-auto">
-            Find vegetarian and vegan options at any restaurant. Just enter the name and city.
+            Find vegetarian and vegan options at any restaurant. Search by name or paste a menu link.
           </p>
         </div>
 
         {/* Search Form */}
         {(step === "input" || step === "error") && (
-          <SearchForm onSearch={handleSearch} disabled={false} />
+          <SearchForm onSearch={handleSearch} onDirectUrl={handleDirectUrl} disabled={false} />
         )}
 
         {isProcessing && (
           <>
-            <SearchForm onSearch={handleSearch} disabled={true} />
+            <SearchForm onSearch={handleSearch} onDirectUrl={handleDirectUrl} disabled={true} />
             <ProgressStepper currentStep={step} />
           </>
         )}
