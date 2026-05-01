@@ -11,12 +11,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
+    const apiKey = process.env.key;
     const cx = process.env.GOOGLE_SEARCH_CX;
 
     if (!apiKey || !cx) {
       return NextResponse.json(
-        { error: "Search API not configured. Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX." },
+        { error: "Search API not configured. Set key and GOOGLE_SEARCH_CX." },
         { status: 500 }
       );
     }
