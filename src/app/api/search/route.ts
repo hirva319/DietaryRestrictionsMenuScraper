@@ -28,8 +28,15 @@ export async function POST(req: NextRequest) {
     if (!response.ok) {
       const errBody = await response.text();
       console.error("Google Search API error:", errBody);
+      let detail = "Search API request failed";
+      try {
+        const parsed = JSON.parse(errBody);
+        detail = parsed?.error?.message || detail;
+      } catch {
+        // use default message
+      }
       return NextResponse.json(
-        { error: "Search API request failed" },
+        { error: detail },
         { status: 502 }
       );
     }
