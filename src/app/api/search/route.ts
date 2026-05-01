@@ -11,81 +11,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const serperKey = process.env.SERPER_API_KEY;
-    const googleKey = process.env.GOOGLE_SEARCH_API_KEY;
-    const googleCx = process.env.GOOGLE_SEARCH_CX;
+    const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
+    const cx = process.env.GOOGLE_SEARCH_CX;
+
+    if (!apiKey || !cx) {
+      return NextResponse.json(
+        { error: "Search API not configured. Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX." },
+        { status: 500 }
+      );
+    }
 
     const query = `${restaurant} ${city} menu`;
-
-    // Try Serper (preferred — free, simple, reliable)
-    if (serperKey) {
-      const results = await searchSerper(query, serperKey);
-      if (results) return NextResponse.json({ results });
-    }
-
-    // Fall back to Google Custom Search API
-    if (googleKey && googleCx) {
-      const results = await searchGoogle(query, googleKey, googleCx);
-      if (results) return NextResponse.json({ results });
-    }
-
-    return NextResponse.json(
-      { error: "Search API not configured. Set SERPER_API_KEY in your environment variables. Get a free key at serper.dev" },
-      { status: 500 }
-    );
-  } catch (err) {
-    console.error("Search error:", err);
-    return NextResponse.json(
-      { error: "Search failed. Try pasting a menu URL directly." },
-      { status: 500 }
-    );
-  }
-}
-
-async function searchSerper(query: string, apiKey: string) {
-  try {
-    const response = await fetch("https://google.serper.dev/search", {
-      method: "POST",
-      headers: {
-        "X-API-KEY": apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ q: query, num: 5 }),
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!response.ok) {
-      const errBody = await response.text();
-      console.error("Serper API error:", errBody);
-      return null;
-    }
-
-    const data = await response.json();
-
-    const results = (data.organic || []).map(
-      (item: { title: string; link: string; snippet: string }) => ({
-        title: item.title,
-        url: item.link,
-        snippet: item.snippet || "",
-      })
-    );
-
-    return results.length > 0 ? results : null;
-  } catch (err) {
-    console.error("Serper search failed:", err);
-    return null;
-  }
-}
-
-async function searchGoogle(query: string, apiKey: string, cx: string) {
-  try {
     const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(query)}&num=5`;
+
     const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
 
     if (!response.ok) {
       const errBody = await response.text();
       console.error("Google Search API error:", errBody);
-      return null;
+      let detail = "Search API request failed";
+      try {
+        const parsed = JSON.parse(errBody);
+        detail = parsed?.error?.message || detail;
+      } catch {
+        // use default message
+      }
+      return NextResponse.json({ error: detail }, { status: 502 });
     }
 
     const data = await response.json();
@@ -98,9 +49,19 @@ async function searchGoogle(query: string, apiKey: string, cx: string) {
       })
     );
 
-    return results.length > 0 ? results : null;
+    if (results.length === 0) {
+      return NextResponse.json(
+        { error: "No menu results found. Try a different restaurant name or city." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ results });
   } catch (err) {
-    console.error("Google search failed:", err);
-    return null;
+    console.error("Search error:", err);
+    return NextResponse.json(
+      { error: "Search failed. Please try again." },
+      { status: 500 }
+    );
   }
 }
