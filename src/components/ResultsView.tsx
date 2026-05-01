@@ -141,6 +141,19 @@ export default function ResultsView({ data, restaurant, onReset }: ResultsViewPr
             </ul>
           </div>
         )}
+
+        {data.method && (
+          <div className="mt-3 text-xs text-gray-400 text-right">
+            Analyzed using{" "}
+            {data.method === "ai" ? (
+              <span className="text-emerald-600 font-medium">AI (GPT-4o-mini)</span>
+            ) : (
+              <span className="text-amber-600 font-medium">
+                keyword analysis (no API key set)
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Filter tabs */}

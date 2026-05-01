@@ -32,6 +32,7 @@ export interface ClassificationSummary {
 export interface ClassificationResult {
   items: MenuItem[];
   summary: ClassificationSummary;
+  method?: "ai" | "local";
 }
 
 export type AppStep = "input" | "searching" | "extracting" | "classifying" | "results" | "error";

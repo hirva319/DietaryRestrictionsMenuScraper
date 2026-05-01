@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { classifyMenuText } from "@/lib/classifier";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,16 +14,16 @@ export async function POST(req: NextRequest) {
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
+
     if (!apiKey) {
-      return NextResponse.json(
-        { error: "OpenAI API key not configured. Set OPENAI_API_KEY." },
-        { status: 500 }
-      );
+      const result = classifyMenuText(menuText, restaurant || "Unknown");
+      return NextResponse.json({ ...result, method: "local" });
     }
 
-    const openai = new OpenAI({ apiKey });
+    try {
+      const openai = new OpenAI({ apiKey });
 
-    const prompt = `You are a dietary analysis expert. Analyze this restaurant menu text and classify every identifiable food item for vegetarian and vegan diners.
+      const prompt = `You are a dietary analysis expert. Analyze this restaurant menu text and classify every identifiable food item for vegetarian and vegan diners.
 
 Restaurant: ${restaurant || "Unknown"}
 
@@ -60,23 +61,25 @@ Return a JSON object with this exact structure:
 
 Focus on accuracy. If you're unsure whether something contains meat-based broth or hidden animal products (like gelatin, lard, anchovy paste), classify as "ask_server". Only return valid JSON, nothing else.`;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-    });
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      return NextResponse.json(
-        { error: "No response from AI" },
-        { status: 502 }
-      );
+      const content = completion.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error("Empty AI response");
+      }
+
+      const classification = JSON.parse(content);
+      return NextResponse.json({ ...classification, method: "ai" });
+    } catch (aiError) {
+      console.error("OpenAI failed, falling back to local classifier:", aiError);
+      const result = classifyMenuText(menuText, restaurant || "Unknown");
+      return NextResponse.json({ ...result, method: "local" });
     }
-
-    const classification = JSON.parse(content);
-    return NextResponse.json(classification);
   } catch (err) {
     console.error("Classify error:", err);
     return NextResponse.json(
