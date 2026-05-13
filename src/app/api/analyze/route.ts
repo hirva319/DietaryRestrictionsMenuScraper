@@ -77,8 +77,9 @@ export async function POST(req: NextRequest) {
 Find URLs that contain the actual food menu with item names and prices.
 Look for the restaurant's official website menu page, Yelp menu page, or other menu sources.
 
-Return ONLY a JSON array of up to 3 menu URLs, nothing else. Example:
-["https://example.com/menu", "https://yelp.com/menu/example"]`;
+Return ONLY a JSON array of up to 2 best menu URLs, nothing else. Example:
+["https://yelp.com/menu/example", "https://example.com/menu"]
+Prefer Yelp, Allmenus, or other menu aggregator sites over the restaurant's own site.`;
 
       const urlResponse = await callGemini(ai, findPrompt, true);
 
@@ -93,16 +94,15 @@ Return ONLY a JSON array of up to 3 menu URLs, nothing else. Example:
       }
     }
 
-    // Step 2: Extract full menu text from URLs
-    let menuText = "";
+    // Step 2: Extract full menu text from URLs (in parallel)
+    const extractions = await Promise.all(
+      menuUrls.slice(0, 2).map((url) => extractWithJina(url))
+    );
 
-    for (const url of menuUrls.slice(0, 3)) {
-      const text = await extractWithJina(url);
-      if (text) {
-        menuText += `\n${text}\n`;
-        if (menuText.length > 20000) break;
-      }
-    }
+    let menuText = extractions
+      .filter((t): t is string => t !== null)
+      .join("\n")
+      .slice(0, 30000);
 
     // Step 3: Classify with Gemini
     let classifyPrompt: string;
