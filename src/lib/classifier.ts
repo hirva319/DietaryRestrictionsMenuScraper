@@ -119,15 +119,35 @@ function containsAny(text: string, keywords: string[]): string | null {
   return null;
 }
 
+function hasChoicePattern(text: string): boolean {
+  return /\b(or|choice of|your choice|choose|option)\b/i.test(text);
+}
+
 function classifyItem(name: string, description: string): { category: Category; note: string | null } {
   const combined = `${name} ${description}`;
 
+  const nameMeat = containsAny(name, MEAT_KEYWORDS);
+  if (nameMeat) {
+    return { category: "avoid", note: `Contains ${nameMeat}` };
+  }
+
+  const nameSeafood = containsAny(name, SEAFOOD_KEYWORDS);
+  if (nameSeafood) {
+    return { category: "avoid", note: `Contains ${nameSeafood}` };
+  }
+
   const meatMatch = containsAny(combined, MEAT_KEYWORDS);
+  if (meatMatch && hasChoicePattern(description)) {
+    return { category: "ask_server", note: `May contain ${meatMatch} — ask for vegetarian option` };
+  }
   if (meatMatch) {
     return { category: "avoid", note: `Contains ${meatMatch}` };
   }
 
   const seafoodMatch = containsAny(combined, SEAFOOD_KEYWORDS);
+  if (seafoodMatch && hasChoicePattern(description)) {
+    return { category: "ask_server", note: `May contain ${seafoodMatch} — ask for vegetarian option` };
+  }
   if (seafoodMatch) {
     return { category: "avoid", note: `Contains ${seafoodMatch}` };
   }
@@ -199,7 +219,7 @@ const SKIP_LINE_PATTERNS = [
   /^Markdown Content:/i,
   /^!\[/,
   /^\[.*\]\(.*\)$/,
-  /^#{1,6}\s/,
+  /^#{1,3}\s/,
   /^(hours|location|address|phone|tel|fax|www\.|http|follow us|copyright|©|all rights|privacy|terms|\d{3}[-.]\d{3}|download pdf|video of)/i,
   /^\*{3,}$/,
   /^-{3,}$/,
@@ -236,6 +256,12 @@ const SKIP_LINE_PATTERNS = [
   /^(mon|tue|wed|thu|fri|sat|sun)(day)?[\s,:-]/i,
   /^\d{1,2}:\d{2}\s*(am|pm)/i,
   /^\d{1,2}\s*(am|pm)\s*[-–]\s*\d{1,2}\s*(am|pm)/i,
+  /^\d+ reviews?$/i,
+  /^\d+ photos?$/i,
+  /^(write a review|log in|sign up|yelp|great for sharing)/i,
+  /^\|/,
+  /^(restaurants|home services|auto services|more)$/i,
+  /^(marinara|ranch)\s*$/i,
 ];
 
 const PRICE_PATTERN = /(?:^|\s)\$?\d{1,3}(?:[.,]\d{2})?\s*$/;
@@ -270,20 +296,28 @@ function extractMenuItems(text: string): RawItem[] {
 
     if (SKIP_LINE_PATTERNS.some((p) => p.test(line))) continue;
 
-    if (SECTION_HEADER.test(line)) continue;
+    if (/^#{1,3}\s/.test(line)) continue;
 
     if (STANDALONE_PRICE.test(line)) continue;
 
     if (line.length < 3 || line.length > 200) continue;
 
-    const priceMatch = line.match(PRICE_PATTERN);
     let name = line;
+
+    const itemHeader = line.match(/^#{4,6}\s+(.+)$/);
+    if (itemHeader) {
+      name = itemHeader[1];
+    }
+
+    name = name.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").trim();
+
+    const priceMatch = name.match(PRICE_PATTERN);
     let price: string | null = null;
 
     if (priceMatch) {
       price = priceMatch[0].trim();
       if (!price.startsWith("$")) price = "$" + price;
-      name = line.slice(0, line.length - priceMatch[0].length).trim();
+      name = name.slice(0, name.length - priceMatch[0].length).trim();
     }
 
     name = cleanDietaryMarkers(name);
@@ -293,37 +327,36 @@ function extractMenuItems(text: string): RawItem[] {
 
     let description = "";
 
-    if (i + 1 < lines.length) {
-      const nextLine = lines[i + 1];
+    let j = i + 1;
+    while (j < lines.length && j <= i + 3) {
+      const nextLine = lines[j];
 
       if (STANDALONE_PRICE.test(nextLine)) {
         price = nextLine.trim();
         if (!price.startsWith("$")) price = "$" + price;
-        i++;
+        j++;
+        continue;
       }
 
-      if (i + 1 < lines.length) {
-        const descCandidate = lines[i + 1];
-        const isDesc =
-          !STANDALONE_PRICE.test(descCandidate) &&
-          !SECTION_HEADER.test(descCandidate) &&
-          !SKIP_LINE_PATTERNS.some((p) => p.test(descCandidate)) &&
-          descCandidate.length > 5 &&
-          descCandidate.length < 300 &&
-          /^[a-z]/.test(descCandidate);
+      if (/^#{4,6}\s/.test(nextLine)) break;
+      if (/^#{1,3}\s/.test(nextLine)) break;
+      if (SKIP_LINE_PATTERNS.some((p) => p.test(nextLine))) { j++; continue; }
 
-        if (isDesc) {
-          description = descCandidate;
-          i++;
-
-          if (i + 1 < lines.length && STANDALONE_PRICE.test(lines[i + 1])) {
-            price = lines[i + 1].trim();
-            if (!price.startsWith("$")) price = "$" + price;
-            i++;
-          }
-        }
+      if (
+        !description &&
+        nextLine.length > 10 &&
+        nextLine.length < 300 &&
+        !nextLine.match(/^\d+ (reviews?|photos?)$/i)
+      ) {
+        description = nextLine;
+        j++;
+        continue;
       }
+
+      break;
     }
+
+    i = j - 1;
 
     const key = normalize(name);
     if (seen.has(key)) continue;
