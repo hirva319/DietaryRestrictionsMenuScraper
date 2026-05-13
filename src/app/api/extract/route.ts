@@ -1,14 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as cheerio from "cheerio";
 
-export async function POST(req: NextRequest) {
+async function extractWithJina(url: string): Promise<string | null> {
   try {
-    const { url } = await req.json();
+    const response = await fetch(`https://r.jina.ai/${url}`, {
+      headers: {
+        Accept: "text/plain",
+        "X-Return-Format": "text",
+      },
+      signal: AbortSignal.timeout(20000),
+    });
 
-    if (!url) {
-      return NextResponse.json({ error: "URL is required" }, { status: 400 });
-    }
+    if (!response.ok) return null;
 
+    const text = await response.text();
+    if (text.length < 100) return null;
+
+    return text.slice(0, 15000);
+  } catch {
+    return null;
+  }
+}
+
+async function extractWithCheerio(url: string): Promise<string | null> {
+  try {
     const response = await fetch(url, {
       headers: {
         "User-Agent":
@@ -18,12 +33,7 @@ export async function POST(req: NextRequest) {
       signal: AbortSignal.timeout(15000),
     });
 
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `Failed to fetch URL (status ${response.status})` },
-        { status: 502 }
-      );
-    }
+    if (!response.ok) return null;
 
     const contentType = response.headers.get("content-type") || "";
 
@@ -33,11 +43,7 @@ export async function POST(req: NextRequest) {
       const parser = new PDFParse({ data: new Uint8Array(buffer) });
       const textResult = await parser.getText();
       await parser.destroy();
-      return NextResponse.json({
-        text: textResult.text.slice(0, 15000),
-        source: url,
-        type: "pdf",
-      });
+      return textResult.text.slice(0, 15000);
     }
 
     const html = await response.text();
@@ -77,11 +83,38 @@ export async function POST(req: NextRequest) {
       .trim()
       .slice(0, 15000);
 
-    return NextResponse.json({
-      text: cleaned,
-      source: url,
-      type: "html",
-    });
+    return cleaned.length >= 100 ? cleaned : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { url } = await req.json();
+
+    if (!url) {
+      return NextResponse.json({ error: "URL is required" }, { status: 400 });
+    }
+
+    // Try Jina AI reader first (handles JS-rendered pages)
+    let text = await extractWithJina(url);
+    let type = "jina";
+
+    // Fall back to direct Cheerio scraping
+    if (!text) {
+      text = await extractWithCheerio(url);
+      type = "html";
+    }
+
+    if (!text) {
+      return NextResponse.json(
+        { error: "Could not extract content from this page" },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ text, source: url, type });
   } catch (err) {
     console.error("Extract error:", err);
     return NextResponse.json(

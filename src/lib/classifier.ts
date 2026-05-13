@@ -15,6 +15,7 @@ const MEAT_KEYWORDS = [
   "pastrami", "corned beef", "bresaola", "mortadella",
   "liver", "tongue", "oxtail", "tripe",
   "gyro", "kebab", "shawarma",
+  "skirt steak", "flank steak", "filet",
 ];
 
 const SEAFOOD_KEYWORDS = [
@@ -26,6 +27,7 @@ const SEAFOOD_KEYWORDS = [
   "sushi", "sashimi", "poke",
   "seafood", "surf and turf",
   "ahi", "unagi", "eel", "caviar", "roe",
+  "hamachi", "branzino", "langoustine",
 ];
 
 const DAIRY_KEYWORDS = [
@@ -36,6 +38,7 @@ const DAIRY_KEYWORDS = [
   "butter", "milk", "yogurt", "sour cream", "creme fraiche",
   "whey", "casein", "ghee",
   "ice cream", "gelato", "whipped cream",
+  "labneh", "tzatziki",
 ];
 
 const EGG_KEYWORDS = [
@@ -66,6 +69,9 @@ const VEGAN_SAFE_KEYWORDS = [
   "nuts", "almonds", "cashews", "walnuts", "peanuts", "pecans",
   "oat milk", "almond milk", "soy milk", "coconut milk",
   "sorbet",
+  "muhammara", "tapenade", "baba ganoush",
+  "pistachio", "pomegranate", "lemon", "olive",
+  "roasted pepper", "charred eggplant",
 ];
 
 const HIDDEN_ANIMAL_KEYWORDS = [
@@ -74,15 +80,14 @@ const HIDDEN_ANIMAL_KEYWORDS = [
   "bone broth", "beef broth", "chicken broth", "chicken stock", "beef stock",
   "demi-glace", "demi glace",
   "rennet",
+  "beef jus", "lamb jus", "pork jus",
 ];
 
 const ASK_SERVER_HINTS = [
-  "broth", "stock", "gravy", "sauce", "dressing",
+  "broth", "stock", "gravy", "dressing",
   "fried", "deep fried",
   "pesto",
-  "wrap", "burrito", "taco",
   "stir fry", "stir-fry",
-  "curry",
   "risotto",
   "gnocchi",
   "dumpling", "dumplings", "gyoza", "wonton",
@@ -177,6 +182,31 @@ interface RawItem {
   price: string | null;
 }
 
+const SKIP_LINE_PATTERNS = [
+  /^---\s*From:/i,
+  /^Title:/i,
+  /^URL Source:/i,
+  /^Markdown Content:/i,
+  /^!\[/,
+  /^\[.*\]\(.*\)$/,
+  /^#{1,6}\s*(menu|lunch|dinner|brunch|breakfast|dessert|drink|beverage|wine|beer|cocktail|spirit|appetizer|entree|starter|side|happy hour|hours|location|reserv|contact|about|home|navigation|footer|header)s?\s*$/i,
+  /^(hours|location|address|phone|tel|fax|www\.|http|follow us|copyright|©|all rights|privacy|terms|\d{3}[-.]\d{3}|download pdf|video of)/i,
+  /^\*{3,}$/,
+  /^-{3,}$/,
+  /^image \d/i,
+  /^\[.*download.*\]/i,
+  /^served with/i,
+  /^choice of/i,
+  /^add \$/i,
+  /^includes /i,
+  /^(please|ask your|may contain|consuming raw)/i,
+  /^Signature dishes/i,
+];
+
+const PRICE_PATTERN = /(?:^|\s)\$?\d{1,3}(?:[.,]\d{2})?\s*$/;
+const STANDALONE_PRICE = /^\$?\d{1,3}(?:[.,]\d{2})?$/;
+const SECTION_HEADER = /^#{1,6}\s+(.+)$/;
+
 function extractMenuItems(text: string): RawItem[] {
   const items: RawItem[] = [];
   const seen = new Set<string>();
@@ -186,41 +216,63 @@ function extractMenuItems(text: string): RawItem[] {
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
 
-  const pricePattern = /\$\s?[\d]+(?:[.,]\d{2})?/;
-  const sectionHeaders = /^(appetizer|entree|entre|main|dessert|side|beverage|drink|soup|salad|sandwich|pizza|burger|pasta|seafood|breakfast|lunch|dinner|brunch|starters?|mains?|sweets?|specials?|shareables?|small plates?|large plates?|from the (?:grill|oven|sea|garden))s?\s*$/i;
-
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    if (sectionHeaders.test(line)) continue;
-    if (line.length < 3 || line.length > 200) continue;
-    if (/^(?:hours|location|address|phone|tel|fax|www\.|http|follow us|copyright|©|\d{3}[-.]\d{3})/i.test(line)) continue;
+    if (SKIP_LINE_PATTERNS.some((p) => p.test(line))) continue;
 
-    const priceMatch = line.match(pricePattern);
+    if (SECTION_HEADER.test(line)) continue;
+
+    if (STANDALONE_PRICE.test(line)) continue;
+
+    if (line.length < 3 || line.length > 200) continue;
+
+    const priceMatch = line.match(PRICE_PATTERN);
     let name = line;
     let price: string | null = null;
 
     if (priceMatch) {
-      price = priceMatch[0];
-      name = line.replace(pricePattern, "").replace(/[.\s]+$/, "").trim();
+      price = priceMatch[0].trim();
+      if (!price.startsWith("$")) price = "$" + price;
+      name = line.slice(0, line.length - priceMatch[0].length).trim();
     }
 
-    if (name.length < 3 || name.length > 120) continue;
+    name = name.replace(/\s*[vV],?\s*(gf)?\s*$/, "").trim();
+
+    if (name.length < 2 || name.length > 120) continue;
     if (/^\d+$/.test(name)) continue;
 
     let description = "";
+
     if (i + 1 < lines.length) {
       const nextLine = lines[i + 1];
-      const looksLikeDescription =
-        !pricePattern.test(nextLine) &&
-        !sectionHeaders.test(nextLine) &&
-        nextLine.length > 10 &&
-        nextLine.length < 300 &&
-        /^[a-z]/.test(nextLine);
 
-      if (looksLikeDescription) {
-        description = nextLine;
+      if (STANDALONE_PRICE.test(nextLine)) {
+        price = nextLine.trim();
+        if (!price.startsWith("$")) price = "$" + price;
         i++;
+      }
+
+      if (i + 1 < lines.length) {
+        const descCandidate = lines[i + 1];
+        const isDesc =
+          !STANDALONE_PRICE.test(descCandidate) &&
+          !SECTION_HEADER.test(descCandidate) &&
+          !SKIP_LINE_PATTERNS.some((p) => p.test(descCandidate)) &&
+          descCandidate.length > 5 &&
+          descCandidate.length < 300 &&
+          /^[a-z]/.test(descCandidate);
+
+        if (isDesc) {
+          description = descCandidate;
+          i++;
+
+          if (i + 1 < lines.length && STANDALONE_PRICE.test(lines[i + 1])) {
+            price = lines[i + 1].trim();
+            if (!price.startsWith("$")) price = "$" + price;
+            i++;
+          }
+        }
       }
     }
 

@@ -27,7 +27,7 @@ export default function Home() {
         if (extractRes.ok) {
           const extractData = await extractRes.json();
           if (extractData.text && extractData.text.length > 50) {
-            menuText += `\n--- From: ${item.title} (${item.url}) ---\n${extractData.text}\n`;
+            menuText += `\n${extractData.text}\n`;
           }
         }
       } catch {
