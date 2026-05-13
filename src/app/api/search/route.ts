@@ -11,37 +11,43 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = process.env.key;
-    const cx = process.env.GOOGLE_SEARCH_CX;
+    const apiKey = process.env.SERPER_API_KEY;
 
-    if (!apiKey || !cx) {
+    if (!apiKey) {
       return NextResponse.json(
-        { error: "Search API not configured. Set key and GOOGLE_SEARCH_CX." },
+        { error: "Search API not configured. Set SERPER_API_KEY in environment variables." },
         { status: 500 }
       );
     }
 
     const query = `${restaurant} ${city} menu`;
-    const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(query)}&num=5`;
 
-    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const response = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: query, num: 5 }),
+      signal: AbortSignal.timeout(10000),
+    });
 
     if (!response.ok) {
       const errBody = await response.text();
-      console.error("Google Search API error:", errBody);
-      let detail = "Search API request failed";
+      console.error("Serper API error:", errBody);
+      let detail = "Search failed";
       try {
         const parsed = JSON.parse(errBody);
-        detail = parsed?.error?.message || detail;
+        detail = parsed?.message || detail;
       } catch {
-        // use default message
+        // use default
       }
       return NextResponse.json({ error: detail }, { status: 502 });
     }
 
     const data = await response.json();
 
-    const results = (data.items || []).map(
+    const results = (data.organic || []).map(
       (item: { title: string; link: string; snippet: string }) => ({
         title: item.title,
         url: item.link,
