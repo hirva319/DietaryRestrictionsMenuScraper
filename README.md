@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Veggie Scout
 
-## Getting Started
+Find vegetarian and vegan options at any restaurant. Enter a restaurant name and city, and Veggie Scout uses AI to search the web for the menu and classify every dish.
 
-First, run the development server:
+## How It Works
+
+1. Enter a restaurant name + city (or paste a menu URL)
+2. Gemini AI searches the web, finds the menu, and classifies every item:
+   - **Vegan** — No animal products
+   - **Vegetarian** — No meat/fish (dairy and eggs OK)
+   - **Vegan with Modification** — Can be made vegan (tells you what to ask)
+   - **Ask Server** — Unclear ingredients, worth asking about
+   - **Avoid** — Contains meat, poultry, or fish
+3. See your best options with top picks and filtering
+
+## Setup
+
+### 1. Get a free Gemini API key
+
+Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and create a key. No credit card needed.
+
+### 2. Install and run
 
 ```bash
+npm install
+cp .env.example .env.local
+# Edit .env.local and paste your Gemini API key
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) and start searching.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploy to Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Push to GitHub
+2. Import in [vercel.com](https://vercel.com)
+3. Add environment variable: `GEMINI_API_KEY` = your key
+4. Deploy
 
-## Learn More
+## Tech Stack
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Next.js 15** (App Router, TypeScript)
+- **Tailwind CSS**
+- **Google Gemini 2.0 Flash** with Google Search grounding

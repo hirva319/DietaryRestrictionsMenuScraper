@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import SearchForm from "@/components/SearchForm";
 import ProgressStepper from "@/components/ProgressStepper";
 import ResultsView from "@/components/ResultsView";
-import { AppStep, ClassificationResult, SearchResult } from "@/lib/types";
+import { AppStep, ClassificationResult } from "@/lib/types";
 
 export default function Home() {
   const [step, setStep] = useState<AppStep>("input");
@@ -12,106 +12,52 @@ export default function Home() {
   const [results, setResults] = useState<ClassificationResult | null>(null);
   const [restaurant, setRestaurant] = useState("");
 
-  const extractAndClassify = useCallback(async (urls: { title: string; url: string }[], restaurantName: string) => {
-    setStep("extracting");
-
-    let menuText = "";
-    for (const item of urls.slice(0, 3)) {
-      try {
-        const extractRes = await fetch("/api/extract", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: item.url }),
-        });
-
-        if (extractRes.ok) {
-          const extractData = await extractRes.json();
-          if (extractData.text && extractData.text.length > 50) {
-            menuText += `\n${extractData.text}\n`;
-          }
-        }
-      } catch {
-        // skip failed extractions
-      }
-    }
-
-    if (menuText.length < 50) {
-      throw new Error("Could not extract enough menu data. Try pasting the menu URL directly.");
-    }
-
-    setStep("classifying");
-    const classifyRes = await fetch("/api/classify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ menuText, restaurant: restaurantName }),
-    });
-
-    if (!classifyRes.ok) {
-      const errData = await classifyRes.json();
-      throw new Error(errData.error || "Classification failed");
-    }
-
-    const classification: ClassificationResult = await classifyRes.json();
-
-    if (!classification.items || classification.items.length === 0) {
-      throw new Error("No menu items could be identified. Try a different restaurant or URL.");
-    }
-
-    return classification;
-  }, []);
-
-  const handleSearch = useCallback(async (restaurantName: string, city: string) => {
-    setRestaurant(restaurantName);
+  const analyze = useCallback(async (body: Record<string, string>) => {
     setError(null);
     setResults(null);
+    setStep("searching");
 
     try {
-      setStep("searching");
-      const searchRes = await fetch("/api/search", {
+      const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ restaurant: restaurantName, city }),
+        body: JSON.stringify(body),
       });
 
-      if (!searchRes.ok) {
-        const errData = await searchRes.json();
-        throw new Error(errData.error || "Search failed");
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Analysis failed");
       }
 
-      const { results: searchResults } = (await searchRes.json()) as {
-        results: SearchResult[];
-      };
+      const data: ClassificationResult = await res.json();
 
-      if (!searchResults || searchResults.length === 0) {
-        throw new Error("No menu results found. Try pasting the menu URL directly.");
+      if (!data.items || data.items.length === 0) {
+        throw new Error("No menu items found. Try a different restaurant.");
       }
 
-      const classification = await extractAndClassify(searchResults, restaurantName);
-      setResults(classification);
+      setResults(data);
       setStep("results");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setStep("error");
     }
-  }, [extractAndClassify]);
+  }, []);
 
-  const handleDirectUrl = useCallback(async (url: string, restaurantName: string) => {
-    setRestaurant(restaurantName);
-    setError(null);
-    setResults(null);
+  const handleSearch = useCallback(
+    (restaurantName: string, city: string) => {
+      setRestaurant(restaurantName);
+      analyze({ restaurant: restaurantName, city });
+    },
+    [analyze]
+  );
 
-    try {
-      const classification = await extractAndClassify(
-        [{ title: restaurantName, url }],
-        restaurantName
-      );
-      setResults(classification);
-      setStep("results");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-      setStep("error");
-    }
-  }, [extractAndClassify]);
+  const handleDirectUrl = useCallback(
+    (url: string, restaurantName: string) => {
+      setRestaurant(restaurantName || "Restaurant");
+      analyze({ restaurant: restaurantName, menuUrl: url });
+    },
+    [analyze]
+  );
 
   const handleReset = () => {
     setStep("input");
@@ -120,12 +66,11 @@ export default function Home() {
     setRestaurant("");
   };
 
-  const isProcessing = ["searching", "extracting", "classifying"].includes(step);
+  const isProcessing = step === "searching";
 
   return (
     <main className="flex-1 bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
       <div className="max-w-4xl mx-auto px-4 py-12 sm:py-20">
-        {/* Header */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-2xl mb-4">
             <span className="text-3xl">🥦</span>
@@ -138,7 +83,6 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Search Form */}
         {(step === "input" || step === "error") && (
           <SearchForm onSearch={handleSearch} onDirectUrl={handleDirectUrl} disabled={false} />
         )}
@@ -146,11 +90,20 @@ export default function Home() {
         {isProcessing && (
           <>
             <SearchForm onSearch={handleSearch} onDirectUrl={handleDirectUrl} disabled={true} />
-            <ProgressStepper currentStep={step} />
+            <div className="flex flex-col items-center mt-10 space-y-4">
+              <div className="flex space-x-1.5">
+                <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:0ms]" />
+                <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:150ms]" />
+                <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-bounce [animation-delay:300ms]" />
+              </div>
+              <p className="text-emerald-700 font-medium">
+                Searching for menu and analyzing items...
+              </p>
+              <p className="text-sm text-gray-400">This usually takes 5-10 seconds</p>
+            </div>
           </>
         )}
 
-        {/* Error */}
         {step === "error" && error && (
           <div className="mt-6 max-w-xl mx-auto bg-red-50 border border-red-200 rounded-xl p-4 text-center">
             <p className="text-red-700 font-medium">{error}</p>
@@ -163,15 +116,13 @@ export default function Home() {
           </div>
         )}
 
-        {/* Results */}
         {step === "results" && results && (
           <ResultsView data={results} restaurant={restaurant} onReset={handleReset} />
         )}
       </div>
 
-      {/* Footer */}
       <footer className="py-6 text-center text-xs text-gray-400">
-        Veggie Scout &mdash; AI-powered menu analysis. Always confirm with your server.
+        Veggie Scout &mdash; Powered by Gemini. Always confirm with your server.
       </footer>
     </main>
   );
