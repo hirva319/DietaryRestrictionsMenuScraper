@@ -199,7 +199,7 @@ const SKIP_LINE_PATTERNS = [
   /^Markdown Content:/i,
   /^!\[/,
   /^\[.*\]\(.*\)$/,
-  /^#{1,6}\s*(menu|lunch|dinner|brunch|breakfast|dessert|drink|beverage|wine|beer|cocktail|spirit|appetizer|entree|starter|side|happy hour|hours|location|reserv|contact|about|home|navigation|footer|header)s?\s*$/i,
+  /^#{1,6}\s/,
   /^(hours|location|address|phone|tel|fax|www\.|http|follow us|copyright|©|all rights|privacy|terms|\d{3}[-.]\d{3}|download pdf|video of)/i,
   /^\*{3,}$/,
   /^-{3,}$/,
@@ -211,6 +211,31 @@ const SKIP_LINE_PATTERNS = [
   /^includes /i,
   /^(please|ask your|may contain|consuming raw)/i,
   /^Signature dishes/i,
+
+  // Website UI / navigation / non-food text
+  /^(menu|order|cart|checkout|sign ?in|log ?in|log ?out|sign ?up|register|subscribe)/i,
+  /^(search|find|filter|sort|view|show|hide|close|open|expand|collapse|toggle)/i,
+  /^(home|about|contact|careers|jobs|press|news|blog|faq|help|support)/i,
+  /^(delivery|pickup|takeout|take-out|dine-in|dine in|curbside|drive.thru)/i,
+  /^(catering|private|events?|party|parties|gift ?cards?|rewards?|loyalty)/i,
+  /^(change location|find a restaurant|near you|nearby|store locator)/i,
+  /^(skip to|jump to|go to|back to|return to|scroll)/i,
+  /^(waitlist|reservat|book a table|join the wait)/i,
+  /^(free delivery|promo|coupon|discount|limited time|special offer)/i,
+  /^(follow us|connect|social|instagram|facebook|twitter|tiktok)/i,
+  /^(nutrition|calorie|allergen|allergy info)/i,
+  /^(loading|please wait|processing)/i,
+  /^(read more|learn more|see more|view more|see all|view all|show more)/i,
+  /^(accept|decline|allow|deny|cookie|consent)/i,
+  /^(prev|next|previous|back|forward|page \d)/i,
+  /^(select|choose|pick|customize|modify your)/i,
+  /^(minimum|maximum|subtotal|total|tax|tip|fee)/i,
+  /^(welcome|hi there|hello|hey)/i,
+  /\b(click here|tap here|swipe|download our app)\b/i,
+  /^(we are|we're|now open|currently|temporarily)/i,
+  /^(mon|tue|wed|thu|fri|sat|sun)(day)?[\s,:-]/i,
+  /^\d{1,2}:\d{2}\s*(am|pm)/i,
+  /^\d{1,2}\s*(am|pm)\s*[-–]\s*\d{1,2}\s*(am|pm)/i,
 ];
 
 const PRICE_PATTERN = /(?:^|\s)\$?\d{1,3}(?:[.,]\d{2})?\s*$/;
@@ -302,12 +327,52 @@ function extractMenuItems(text: string): RawItem[] {
 
     const key = normalize(name);
     if (seen.has(key)) continue;
-    seen.add(key);
 
+    if (!looksLikeFood(name, description, price)) continue;
+
+    seen.add(key);
     items.push({ name, description, price });
   }
 
   return items;
+}
+
+const ALL_FOOD_KEYWORDS = [
+  ...MEAT_KEYWORDS, ...SEAFOOD_KEYWORDS, ...DAIRY_KEYWORDS,
+  ...EGG_KEYWORDS, ...VEGAN_SAFE_KEYWORDS, ...HIDDEN_ANIMAL_KEYWORDS,
+  ...ASK_SERVER_HINTS,
+  "grilled", "roasted", "baked", "steamed", "seared", "smoked", "crispy",
+  "braised", "sauteed", "sautéed", "glazed", "marinated", "stuffed",
+  "soup", "salad", "sandwich", "burger", "wrap", "bowl", "plate",
+  "appetizer", "entree", "dessert", "cocktail", "wine",
+  "pan-seared", "wood-fired", "charred", "blackened", "poached",
+  "truffle", "garlic", "herb", "spicy", "sweet", "tangy", "savory",
+  "seasonal", "house-made", "housemade", "hand-cut", "fresh",
+  "served with", "topped with", "drizzled",
+  "aioli", "vinaigrette", "reduction", "glaze", "compote", "jam",
+  "side", "add-on", "upgrade",
+  "mezze", "flatbread", "bruschetta", "crostini", "tartare",
+  "taco", "burrito", "quesadilla", "enchilada", "tamale",
+  "ramen", "pho", "pad thai", "lo mein", "fried rice",
+  "tikka", "masala", "tandoori", "biryani", "dal",
+  "panini", "ciabatta", "focaccia", "croissant", "baguette",
+  "smoothie", "latte", "espresso", "tea", "juice",
+  "cake", "pie", "tart", "brownie", "cookie", "pudding", "mousse",
+  "cheesecake", "tiramisu", "baklava", "churro", "donut",
+];
+
+function looksLikeFood(name: string, description: string, price: string | null): boolean {
+  if (price) return true;
+
+  const combined = `${name} ${description}`;
+
+  if (containsAny(combined, ALL_FOOD_KEYWORDS)) return true;
+
+  if (/^\d/.test(name)) return false;
+  if (name.split(/\s+/).length <= 1 && name.length < 8) return false;
+  if (/^[A-Z\s]+$/.test(name) && name.split(/\s+/).length <= 2 && !containsAny(name, ALL_FOOD_KEYWORDS)) return false;
+
+  return false;
 }
 
 // ── Public API ──
