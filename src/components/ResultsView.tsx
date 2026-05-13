@@ -46,6 +46,7 @@ const filterOptions: { key: Category | "all" | "safe"; label: string }[] = [
   { key: "vegetarian", label: "Vegetarian" },
   { key: "vegan_with_modification", label: "Modifiable" },
   { key: "ask_server", label: "Ask Server" },
+  { key: "avoid", label: "Avoid" },
 ];
 
 interface ResultsViewProps {
