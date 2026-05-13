@@ -217,6 +217,20 @@ const PRICE_PATTERN = /(?:^|\s)\$?\d{1,3}(?:[.,]\d{2})?\s*$/;
 const STANDALONE_PRICE = /^\$?\d{1,3}(?:[.,]\d{2})?$/;
 const SECTION_HEADER = /^#{1,6}\s+(.+)$/;
 
+const DIETARY_MARKERS = /(?:,?\s*)?\b(?:vegan|vgn|vg|gf|gluten[- ]?free|df|dairy[- ]?free|nf|nut[- ]?free|contains nuts)\b(?:\s*,?\s*)/gi;
+const TRAILING_MARKERS = /[.,\s]*(VGN|VG|GF|DF|NF|V)(?:[,\s]+(VGN|VG|GF|DF|NF|V))*\s*$/;
+
+function cleanDietaryMarkers(name: string): string {
+  let cleaned = name.replace(DIETARY_MARKERS, " ");
+
+  const trailingMatch = cleaned.match(TRAILING_MARKERS);
+  if (trailingMatch) {
+    cleaned = cleaned.slice(0, trailingMatch.index).trim();
+  }
+
+  return cleaned.replace(/\s{2,}/g, " ").trim();
+}
+
 function extractMenuItems(text: string): RawItem[] {
   const items: RawItem[] = [];
   const seen = new Set<string>();
@@ -247,7 +261,7 @@ function extractMenuItems(text: string): RawItem[] {
       name = line.slice(0, line.length - priceMatch[0].length).trim();
     }
 
-    name = name.replace(/\s*[vV],?\s*(gf)?\s*$/, "").trim();
+    name = cleanDietaryMarkers(name);
 
     if (name.length < 2 || name.length > 120) continue;
     if (/^\d+$/.test(name)) continue;
