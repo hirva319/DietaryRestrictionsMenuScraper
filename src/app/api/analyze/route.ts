@@ -67,14 +67,37 @@ Return ONLY a valid JSON object with this exact structure:
   }
 }`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        temperature: 0.2,
-      },
-    });
+    const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    let response;
+    let lastError;
+
+    for (const model of models) {
+      try {
+        response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            tools: [{ googleSearch: {} }],
+            temperature: 0.2,
+          },
+        });
+        break;
+      } catch (err) {
+        lastError = err;
+        console.error(`Model ${model} failed:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    if (!response) {
+      const msg = lastError instanceof Error ? lastError.message : "All models failed";
+      if (msg.includes("quota") || msg.includes("429")) {
+        return NextResponse.json(
+          { error: "Gemini API quota exceeded. You may need to enable billing at aistudio.google.com (free tier still applies, no charges)." },
+          { status: 429 }
+        );
+      }
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
 
     const text = response.text || "";
 
